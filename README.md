@@ -1,2 +1,2 @@
 # deeplearning-textures
-Experiments in deep learning texture classification from images
+Aalto University Deep learning course project. Experiments in texture classification from images.
