@@ -19,48 +19,11 @@ def res_block(x, filters, kernel_size=3):
     
     return x
 
+def resnet_minc(input_shape=(362,362,3), params=[8, 16, 32, 64, 64, 0.2, 0.2]):
 
-def conv_model(input_shape=(362,362,3)):
-
-    inp = Input(shape=input_shape)
-
-    x = Conv2D(filters=8, kernel_size=3)(inp)
-    x = Activation('relu')(x)
-    x = Conv2D(filters=8, kernel_size=3)(x)  
-    x = Activation('relu')(x)
-    x = MaxPooling2D(pool_size=2)(x)
-
-    x = Conv2D(filters=16, kernel_size=3)(x)
-    x = Activation('relu')(x)
-    x = Conv2D(filters=16, kernel_size=3)(x)
-    x = Activation('relu')(x)
-    x = MaxPooling2D(pool_size=2)(x)
-
-    x = Conv2D(filters=32, kernel_size=3)(x)
-    x = Activation('relu')(x)
-    x = Conv2D(filters=32, kernel_size=3)(x)
-    x = Activation('relu')(x)
-    x = MaxPooling2D(pool_size=2)(x)        
-
-    x = Conv2D(filters=64, kernel_size=3)(x)
-    x = Activation('relu')(x)
-    x = Conv2D(filters=64, kernel_size=3)(x)
-    x = Activation('relu')(x)
-
-#    x = AveragePooling2D(pool_size=5)(x)
-    x = AveragePooling2D(pool_size=2)(x)
-    x = Flatten()(x)
-
-#    x = Dense(512)(x)
-#    x = Activation('relu')(x)
-
-    x = Dense(23)(x)
-    x = Activation('softmax')(x)
-
-    model = Model(inputs=inp, outputs=x)
-    return model
-
-def resnet(input_shape=(362,362,3), filters=[8,16,32,64], dense_width=64, dropout_rates=[0.2, 0.2]):
+    filters = params[:4]
+    dense_width = params[4]
+    dropout_rates = params[5:]
 
     inp = Input(shape=input_shape)
 
@@ -74,32 +37,6 @@ def resnet(input_shape=(362,362,3), filters=[8,16,32,64], dense_width=64, dropou
     x = MaxPooling2D(pool_size=2)(x)
 
     x = res_block(x, filters=filters[3])
-    x = AveragePooling2D(pool_size=8)(x)
-    x = Flatten()(x)
-    x = Dropout(dropout_rates[0])(x)
-
-    x = Dense(dense_width)(x)
-    x = Activation('relu')(x)
-    x = Dropout(dropout_rates[1])(x)
-
-    x = Dense(23)(x)
-    x = Activation('softmax')(x)
-
-    model = Model(inputs=inp, outputs=x)
-    return model
-
-
-def resnet2(input_shape=(362,362,3), filters=[8,16,32], dense_width=64, dropout_rates=[0.2, 0.2]):
-
-    inp = Input(shape=input_shape)
-
-    x = res_block(inp, filters=filters[0])
-    x = MaxPooling2D(pool_size=2)(x)
-
-    x = res_block(x, filters=filters[1])
-    x = MaxPooling2D(pool_size=2)(x)
-
-    x = res_block(x, filters=filters[2])
     x = AveragePooling2D(pool_size=5)(x)
     x = Flatten()(x)
     x = Dropout(dropout_rates[0])(x)
@@ -114,4 +51,27 @@ def resnet2(input_shape=(362,362,3), filters=[8,16,32], dense_width=64, dropout_
     model = Model(inputs=inp, outputs=x)
     return model
 
+def resnet_fmd(input_shape=(128,128,3), params=[8, 16, 32, 0.2]):
 
+    filters = params[:3]
+    dropout_rate = params[3]
+
+    inp = Input(shape=input_shape)
+
+    x = res_block(inp, filters=filters[0])
+    x = MaxPooling2D(pool_size=4)(x)
+
+    x = res_block(x, filters=filters[1])
+    x = MaxPooling2D(pool_size=4)(x)
+
+    x = res_block(x, filters=filters[2])
+    x = MaxPooling2D(pool_size=2)(x)
+    
+    x = Flatten()(x)
+    x = Dropout(dropout_rate)(x)
+
+    x = Dense(10)(x)
+    x = Activation('softmax')(x)
+
+    model = Model(inputs=inp, outputs=x)
+    return model

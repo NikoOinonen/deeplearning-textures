@@ -1,3 +1,5 @@
+import os
+import glob
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,6 +26,7 @@ class ImgSequence(Sequence):
             ('flipud', p): Vertical flip of image with probability p
             ('fliplr', p): Horizontal flip of image with probability p
             ('crop', (p1,p2)): Crop of image with random size between p1 and p2 proportion of original image
+            ('noise', a)): Random uniform noise with zero mean and maximum amplitude a, applied after normalization
     '''
 
     def __init__(self, img_list, img_size=(128,128), batch_size=32, shuffle=True, augmentations=[], norm_mean=0.0, norm_std=1.0):
@@ -44,6 +47,8 @@ class ImgSequence(Sequence):
             elif aug[0] == 'crop':
                 if aug[1][0] < 0.0 or aug[1][1] < 0.0 or aug[1][0] > 1.0 or aug[1][1] > 1.0:
                     raise ValueError('crop augmentation proportions must be between 0.0 and 1.0, but found ' + str(aug[1]))
+            elif aug[0] == 'noise':
+                continue
             else:
                 raise ValueError('Invalid augmentation '+str(aug))
     
@@ -52,6 +57,7 @@ class ImgSequence(Sequence):
             shuffle(self.img_list)
 
     def preprocess(self, img_batch):
+        a = 0.0
         for aug in self.augmentations:
             if aug[0] == 'flipud':
                 img_batch = self.flip(img_batch, 0, aug[1])
@@ -59,7 +65,11 @@ class ImgSequence(Sequence):
                 img_batch = self.flip(img_batch, 1, aug[1])
             elif aug[0] == 'crop':
                 img_batch = self.crop(img_batch, min(aug[1]), max(aug[1]))
+            elif aug[0] == 'noise':
+                a = aug[1]
         img_batch = self.rescale(img_batch)
+        if a > 0.0:
+            img_batch = self.add_noise(img_batch, a)
         return img_batch
 
     def rescale(self, img_batch):
@@ -93,6 +103,9 @@ class ImgSequence(Sequence):
             else:
                 new_imgs[i] = img
         return new_imgs
+
+    def add_noise(self, img_batch, a):
+        return img_batch + 2 * a *(np.random.rand(*img_batch.shape) - 0.5)
 
     def __len__(self):
         return int( np.ceil( len(self.img_list) / float(self.batch_size) ) )
@@ -301,12 +314,13 @@ class SeqConstructor():
         self.augmentations = augmentations
         self.normalize = normalize
 
+        self.train_list = []
+        self.val_list = []
+        self.test_list = []
+        
         if dataset == 'minc':
             with open(self.data_path+'categories.txt', 'r') as f:
                 self.classes = f.read().split()
-            self.train_list = []
-            self.val_list = []
-            self.test_list = []
             self.class_dict = dict()
             ind_pos = [int(i) for i in np.round(np.cumsum(split) * 2500.0)]
             for ci, c in enumerate(self.classes):
@@ -317,6 +331,41 @@ class SeqConstructor():
                 self.train_list += [[base+'%04d.jpg'%i, one_hot_vec] for i in range(0, ind_pos[0])]
                 self.val_list += [[base+'%04d.jpg'%i, one_hot_vec] for i in range(ind_pos[0], ind_pos[1])]
                 self.test_list += [[base+'%04d.jpg'%i, one_hot_vec] for i in range(ind_pos[1], ind_pos[2])]
+        elif dataset == 'fmd':
+            self.classes = ['fabric', 'foliage', 'glass', 'leather', 'metal', 'paper', 'plastic', 'stone', 'water', 'wood']
+            self.class_dict = dict()
+            for ci, c in enumerate(self.classes):
+                self.class_dict[ci] = c
+                files = glob.glob(self.data_path+'image/'+c+'/*.jpg')
+                ind_pos = [int(i) for i in np.round(np.cumsum(split) * 100.0)]
+                for i, f in enumerate(files):
+                    one_hot_vec = np.zeros(len(self.classes))
+                    one_hot_vec[ci] = 1
+                    if i < ind_pos[0]:
+                        self.train_list += [[f, one_hot_vec]]
+                    elif i < ind_pos[1]:
+                        self.val_list += [[f, one_hot_vec]]
+                    else:
+                        self.test_list += [[f, one_hot_vec]]
+        elif dataset == 'kth-tips2':    #TODO Current set division is biased
+            self.classes = ['aluminium_foil', 'brown_break', 'corduroy', 'cork', 'cotton', 'cracker', 'lettuce_leaf', 'linen', 'white_bread', 'wood', 'wool']
+            self.class_dict = dict()
+            for ci, c in enumerate(self.classes):
+                self.class_dict[ci] = c
+                for sample in ['sample_a', 'sample_b', 'sample_c', 'sample_d']:
+                    files = glob.glob(self.data_path+'image/'+c+'/*.jpg')
+                    ind_pos = [int(i) for i in np.round(np.cumsum(split) * 100.0)]
+                    for i, f in enumerate(files):
+                        one_hot_vec = np.zeros(len(self.classes))
+                        one_hot_vec[ci] = 1
+                        if i < ind_pos[0]:
+                            self.train_list += [[f, one_hot_vec]]
+                        elif i < ind_pos[1]:
+                            self.val_list += [[f, one_hot_vec]]
+                        else:
+                            self.test_list += [[f, one_hot_vec]]
+        else:
+            raise ValueError('dataset has to be one of "minc", "fmd", or "kth-tips2", but found '+str(dataset))
 
         self._fit_normalization()
 
@@ -465,7 +514,7 @@ class Metrics:
         fig = plt.figure()
         fig.set_size_inches(36, 32)
 
-        ax1 = fig.add_axes([0.05,0.1,0.8,0.85])
+        ax1 = fig.add_axes([0.1,0.1,0.75,0.85])
         cbar_ax = fig.add_axes([0.88,0.1,0.03,0.85])
         
         im1 = ax1.imshow(conf_mat_norm, cmap=cm.Blues)
@@ -525,6 +574,10 @@ def plot_history(history, outdir='./'):
     plt.plot(loss)
     plt.plot(val_loss)
     plt.legend(['Loss', 'Validation loss'])
+
+    ax = plt.gca()
+    ylim = ax.get_ylim()
+    ax.vlines(np.argmin(val_loss), ymin=ylim[0], ymax=ylim[1], colors='r', linestyles='dashed')
 
     outfile = outdir+'loss_history.png'
     plt.savefig(outfile)
